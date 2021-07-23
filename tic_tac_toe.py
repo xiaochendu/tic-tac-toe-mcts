@@ -8,39 +8,33 @@ BOARD_SIZE = 3
 
 
 class MCTS:
-    def __init__(self, num_iter=10) -> None:
+    def __init__(self) -> None:
         self.tic_tac_toe = self._set_tic_tac_toe()
-        self.simulate_iter = num_iter
 
     def _set_tic_tac_toe(self):
-        starting_state = np.zeros((BOARD_SIZE, BOARD_SIZE))
+        starting_state = np.zeros((BOARD_SIZE, BOARD_SIZE), dtype=int)
         return Node(starting_state)
     
-    def simulate(self):
-        for i in range(self.simulate_iter):
+    def simulate(self, num_iter=10):
+        for i in range(num_iter):
             print(f"Simulating iter {i+1}")
-            self.tic_tac_toe.simulate(self.random_policy, X)
-
-    def random_policy(self, actions):
-        print("actions")
-        print(actions)
-        return random.choice(actions)
-
+            self.tic_tac_toe.simulate(X)
 
 class Node:
     def __init__(self, state, parent=None) -> None:
         self.state = state
         self.parent = parent
         self.children = []
-        self.value = None
+        self.value = 0.0
+        self.rewards = []
         self.visit_count = 0
 
     
     def to_string(self):
-        string = ("Current state:"
-        f"{self.state}"
-        f"Visit count: {self.visit_count}"        
-        f"Value: {self.value}"
+        string = ("Current state:\n"
+        f"{self.state}\n"
+        f"Visit count: {self.visit_count}\n"        
+        f"Value: {self.value}\n"
         )
         return string
 
@@ -48,23 +42,25 @@ class Node:
         return self.to_string()
     
     def __repr__(self):
-        return self.__str__
+        return self.__str__()
 
     def add_children(self, child):
         self.children.append(child)
 
+    def get_winner(self, curr_state=None) -> int:
+        if not curr_state:
+            curr_state = self.state
 
-    def get_winner(self) -> int:
          # if draw
-        if np.all(self.state != 0):
+        if np.all(curr_state != 0):
             return 0
 
         # taken from: https://github.com/int8/monte-carlo-tree-search/blob/58771d1e61c5b0024c23c2c7a4cdb88ffe2efd0a/mctspy/tree/nodes.py#L57
         # refactor this
-        rowsum = np.sum(self.state, 0)
-        colsum = np.sum(self.state, 1)
-        diag_sum_tl = self.state.trace()
-        diag_sum_tr = self.state[::-1].trace()
+        rowsum = np.sum(curr_state, 0)
+        colsum = np.sum(curr_state, 1)
+        diag_sum_tl = curr_state.trace()
+        diag_sum_tr = curr_state[::-1].trace()
 
         player_one_wins = any(rowsum == BOARD_SIZE)
         player_one_wins += any(colsum == BOARD_SIZE)
@@ -90,15 +86,21 @@ class Node:
 
 
     def get_possible_moves(self):
-        print("curr state indexes", list(np.ndindex(self.state.shape)))
+        # print("curr state indexes", list(np.ndindex(self.state.shape)))
         return[(i, j) for i, j in np.ndindex(self.state.shape) if self.state[i, j] == 0]
 
 
     def backup(self, reward):
         # back propagate rewards to parent nodes
         self.visit_count += 1
+        self.rewards.append(reward)
+        print("Rewards", self.rewards)
+        print("Rewards sum", sum(self.rewards))
+        print("Visits", self.visit_count)
         if self.value:
-            self.value = self.value / (self.visit_count + 1) + reward / self.visit_count
+            # TODO: set learning rate
+            # self.value = (self.value * (self.visit_count - 1) + reward) / self.visit_count
+            self.value = sum(self.rewards)/self.visit_count
         else:
             self.value = reward
         
@@ -111,59 +113,78 @@ class Node:
         return -curr_player
 
 
-    def rollout(self):
-        pass
+    def rollout(self, player):
+        state_backup = self.state.copy()
+        while not self.is_terminal():
+            possible_moves = self.get_possible_moves()
+            next_move = self.rollout_policy(possible_moves)
+            self.state[next_move] = player
 
-    def expand(self):
+        winner = self.get_winner()
+        print("the winner is")
+        print(winner)
+        reward = float(winner)
+
+        self.state = state_backup
+        self.backup(reward)
+
+    def expand(self, player):
         # expand all states
         # TODO still doesn't solve the problem of same afterstate from different prev states
-        if not self.children:
-            possible_moves = self.get_possible_moves()
-            for move in possible_moves:
-                new_state = self.state.copy()
-                possible_moves = self.get_possible_moves()
-
-
-    def simulate(self, policy, player):
-        print("Current state: ")
-        print(self.state)
-        if not self.is_terminal():
-            print("Getting new moves")
-            possible_moves = self.get_possible_moves()
-
-            print(possible_moves)
-
-            next_move = policy(possible_moves)
+        possible_moves = self.get_possible_moves()
+        for next_move in possible_moves:
             new_state = self.state.copy()
             new_state[next_move] = player
-
-            # if new_state not in self.children:
-            #     # write logic to check
-            #     child = Node(new_state, self)
-            #     self.add_children(child)
-            # else:
-            #     # get child
-            #     child = Node(new_state, self)
-
-            child = Node(new_state, self)
-
-            next_player = self.get_next_player(player)
-            child.simulate(policy, next_player)
+            new_child = Node(new_state, self)
+            assert new_child.parent is self, "Child's parent is not current Node!"
+            self.children.append(new_child)
         
+        print("Created children", self.children)
+
+    def rollout_policy(self, actions):
+        return random.choice(actions)
+
+    def select_child(self, curr_player):
+        if np.random.binomial(1, 0.05):
+            print("using random policy")
+            # use random policy
+            return np.random.choice(self.children)
+        else:
+            print("greedy policy")
+            child_vals = [x.value*curr_player for x in self.children]
+            # randomly break ties
+            best_child_idx = np.random.choice([index for index, val in enumerate(child_vals) if val == np.max(child_vals)])
+            return self.children[best_child_idx]
+
+    def simulate(self, player):
+        # print details
+        # print(self)
+        # TODO move simulation to MCTS
+        if not self.is_terminal():                
+            next_player = self.get_next_player(player)
+
+            if self.children:
+                for child in self.children:
+                    print("child", child)
+                child = self.select_child(player)
+                child.simulate(next_player)
+            else:
+                self.expand(player)
+                child = self.select_child(player)
+                child.rollout(next_player)
+
         else:
             # terminal state
 
             winner = self.get_winner()
             print("the winner is")
             print(winner)
-            reward = winner
+            reward = float(winner)
             self.backup(reward)
 
-        # TODO figure out same afterstate reached from different parents
-
+        # TODO printing out some graphics of the generated tree and maps
 
 # step 1: write averaging returns with random rollout policy
-
 
 # write some tests
 
@@ -172,9 +193,6 @@ def selection():
     pass
 
 def expansion():
-    pass
-
-def simulate():
     pass
 
 def simulation_policy():
@@ -189,4 +207,4 @@ def evaluate_action():
 
 if __name__ == "__main__":
     mcts = MCTS()
-    mcts.simulate()
+    mcts.simulate(100)
