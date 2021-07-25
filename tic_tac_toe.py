@@ -1,3 +1,4 @@
+import matplotlib.pyplot as plt
 import numpy as np
 import random
 
@@ -8,17 +9,42 @@ BOARD_SIZE = 3
 
 
 class MCTS:
-    def __init__(self) -> None:
+    def __init__(self, num_sim=10) -> None:
         self.tic_tac_toe = self._set_tic_tac_toe()
+        self.num_simulations = num_sim
 
     def _set_tic_tac_toe(self):
         starting_state = np.zeros((BOARD_SIZE, BOARD_SIZE), dtype=int)
         return Node(starting_state)
     
-    def simulate(self, num_iter=10):
-        for i in range(num_iter):
+    def simulate(self):
+        for i in range(self.num_simulations):
             print(f"Simulating iter {i+1}")
             self.tic_tac_toe.simulate(X)
+    
+    def run(self):
+        player = X
+        move_num = 1
+        max_moves = 10
+
+        fig = plt.figure()
+        ax = fig.add_subplot(1, max_moves, move_num)
+
+        while not self.tic_tac_toe.is_terminal():
+            self.simulate()
+            # get best move
+            best_child = self.tic_tac_toe.greedy_policy(player)
+            print("best child")
+            print(best_child)
+            # doesn't display before exiting
+            ax.imshow(best_child.state)
+            self.tic_tac_toe = best_child
+            player = Node.get_next_player(player)
+
+            move_num += 1
+        
+        plt.show()
+        plt.close()
 
 class Node:
     def __init__(self, state, parent=None) -> None:
@@ -54,6 +80,8 @@ class Node:
          # if draw
         if np.all(curr_state != 0):
             return 0
+
+        # TODO: use own method to get winner and run tests
 
         # taken from: https://github.com/int8/monte-carlo-tree-search/blob/58771d1e61c5b0024c23c2c7a4cdb88ffe2efd0a/mctspy/tree/nodes.py#L57
         # refactor this
@@ -94,22 +122,22 @@ class Node:
         # back propagate rewards to parent nodes
         self.visit_count += 1
         self.rewards.append(reward)
-        print("Rewards", self.rewards)
-        print("Rewards sum", sum(self.rewards))
-        print("Visits", self.visit_count)
-        if self.value:
+        # print("Rewards", self.rewards)
+        # print("Rewards sum", sum(self.rewards))
+        # print("Visits", self.visit_count)
+        if self.value > 0.0:
             # TODO: set learning rate
             # self.value = (self.value * (self.visit_count - 1) + reward) / self.visit_count
-            self.value = sum(self.rewards)/self.visit_count
+            self.value = sum(self.rewards) / self.visit_count
         else:
             self.value = reward
         
-        print("state value", self.value)
+        # print("state value", self.value)
         if self.parent:
             self.parent.backup(reward)
 
-
-    def get_next_player(self, curr_player):
+    @classmethod
+    def get_next_player(cls, curr_player):
         return -curr_player
 
 
@@ -121,8 +149,8 @@ class Node:
             self.state[next_move] = player
 
         winner = self.get_winner()
-        print("the winner is")
-        print(winner)
+        # print("the winner is")
+        # print(winner)
         reward = float(winner)
 
         self.state = state_backup
@@ -139,33 +167,33 @@ class Node:
             assert new_child.parent is self, "Child's parent is not current Node!"
             self.children.append(new_child)
         
-        print("Created children", self.children)
+        # print("Created children", self.children)
 
     def rollout_policy(self, actions):
         return random.choice(actions)
 
     def select_child(self, curr_player):
         if np.random.binomial(1, 0.05):
-            print("using random policy")
+            # print("using random policy")
             # use random policy
             return np.random.choice(self.children)
         else:
-            print("greedy policy")
-            child_vals = [x.value*curr_player for x in self.children]
-            # randomly break ties
-            best_child_idx = np.random.choice([index for index, val in enumerate(child_vals) if val == np.max(child_vals)])
-            return self.children[best_child_idx]
+            # print("greedy policy")
+            return self.greedy_policy(curr_player)
+
+
+    def greedy_policy(self, curr_player):
+        child_vals = [x.value*curr_player for x in self.children]
+        best_child_idx = np.random.choice([index for index, val in enumerate(child_vals) if val == np.max(child_vals)])
+        return self.children[best_child_idx]
+
 
     def simulate(self, player):
-        # print details
-        # print(self)
-        # TODO move simulation to MCTS
         if not self.is_terminal():                
             next_player = self.get_next_player(player)
 
             if self.children:
-                for child in self.children:
-                    print("child", child)
+                # for child in self.children:
                 child = self.select_child(player)
                 child.simulate(next_player)
             else:
@@ -175,12 +203,12 @@ class Node:
 
         else:
             # terminal state
-
             winner = self.get_winner()
-            print("the winner is")
-            print(winner)
+            # print("the winner is")
+            # print(winner)
             reward = float(winner)
             self.backup(reward)
+
 
         # TODO printing out some graphics of the generated tree and maps
 
@@ -206,5 +234,5 @@ def evaluate_action():
 
 
 if __name__ == "__main__":
-    mcts = MCTS()
-    mcts.simulate(100)
+    mcts = MCTS(100)
+    mcts.run()
