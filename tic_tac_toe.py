@@ -17,49 +17,54 @@ class MCTS:
         starting_state = np.zeros((BOARD_SIZE, BOARD_SIZE), dtype=int)
         return Node(starting_state)
     
-    def simulate(self):
+    def simulate(self, player):
         for i in range(self.num_simulations):
-            print(f"Simulating iter {i+1}")
-            self.tic_tac_toe.simulate(X)
+            # print(f"Simulating iter {i+1}")
+            self.tic_tac_toe.simulate(player)
     
     def run(self):
         player = X
         move_num = 1
-        max_moves = 10
+        max_moves = 11
 
-        fig = plt.figure()
-        ax = fig.add_subplot(1, max_moves, move_num)
+        # fig = plt.figure()
+        # ax = fig.add_subplot(1, max_moves, move_num)
 
-        while not self.tic_tac_toe.is_terminal():
-            self.simulate()
+        while not self.tic_tac_toe.is_terminal() and move_num < max_moves:
+            self.simulate(player)
             # get best move
             best_child = self.tic_tac_toe.greedy_policy(player)
             print("best child")
             print(best_child)
+
+            for child in self.tic_tac_toe.children:
+                assert np.abs(np.sum(child.state)) <= 1.0, "number of X and O differ by more than 1"
+                # print(child)
+
             # doesn't display before exiting
-            ax.imshow(best_child.state)
+            # ax.imshow(best_child.state)
             self.tic_tac_toe = best_child
             player = Node.get_next_player(player)
+            print("next player", player)
+
 
             move_num += 1
-        
-        plt.show()
-        plt.close()
 
 class Node:
-    def __init__(self, state, parent=None) -> None:
+    def __init__(self, state, parent=None, exploration_constant=5) -> None:
         self.state = state
         self.parent = parent
         self.children = []
-        self.value = 0.0
+        self.value = None
         self.rewards = []
         self.visit_count = 0
+        self.exploration_constant = exploration_constant
 
-    
     def to_string(self):
         string = ("Current state:\n"
         f"{self.state}\n"
-        f"Visit count: {self.visit_count}\n"        
+        f"Visit count: {self.visit_count}\n"
+        f"Rewards: {self.rewards}\n"     
         f"Value: {self.value}\n"
         )
         return string
@@ -125,7 +130,7 @@ class Node:
         # print("Rewards", self.rewards)
         # print("Rewards sum", sum(self.rewards))
         # print("Visits", self.visit_count)
-        if self.value > 0.0:
+        if self.value is not None:
             # TODO: set learning rate
             # self.value = (self.value * (self.visit_count - 1) + reward) / self.visit_count
             self.value = sum(self.rewards) / self.visit_count
@@ -140,12 +145,13 @@ class Node:
     def get_next_player(cls, curr_player):
         return -curr_player
 
-
     def rollout(self, player):
         state_backup = self.state.copy()
         while not self.is_terminal():
+            # self.state = state_backup.copy()
             possible_moves = self.get_possible_moves()
             next_move = self.rollout_policy(possible_moves)
+            assert self.state[next_move] == 0, "next move is already taken"
             self.state[next_move] = player
 
         winner = self.get_winner()
@@ -153,18 +159,27 @@ class Node:
         # print(winner)
         reward = float(winner)
 
-        self.state = state_backup
+        self.state = state_backup.copy()
         self.backup(reward)
 
     def expand(self, player):
         # expand all states
         # TODO still doesn't solve the problem of same afterstate from different prev states
         possible_moves = self.get_possible_moves()
+        # print("current node")
+        # print(self)
+
+        # print("player", player)
         for next_move in possible_moves:
             new_state = self.state.copy()
+            assert new_state[next_move] == 0, "next move is already taken"
             new_state[next_move] = player
             new_child = Node(new_state, self)
             assert new_child.parent is self, "Child's parent is not current Node!"
+
+            # print(new_child)
+            assert np.abs(np.sum(new_child.state)) <= 1.0, "number of X and O differ by more than 1"
+
             self.children.append(new_child)
         
         # print("Created children", self.children)
@@ -199,10 +214,9 @@ class Node:
         return self.children[best_child_index]
 
     def greedy_policy(self, curr_player):
-        child_vals = [x.value*curr_player for x in self.children]
+        child_vals = [x.value*curr_player if x.value else 0 for x in self.children]
         best_child_idx = np.random.choice([index for index, val in enumerate(child_vals) if val == np.max(child_vals)])
         return self.children[best_child_idx]
-
 
     def simulate(self, player):
         if not self.is_terminal():                
@@ -210,13 +224,15 @@ class Node:
 
             if self.children:
                 # for child in self.children:
-                child = self.select_child(player)
+                #     print(child)
+                # child = self.select_child(player)
+                child = self.select_child_ucb(player)
                 child.simulate(next_player)
             else:
                 self.expand(player)
-                child = self.select_child(player)
+                # child = self.select_child(player)
+                child = self.select_child_ucb(player)
                 child.rollout(next_player)
-
         else:
             # terminal state
             winner = self.get_winner()
@@ -229,25 +245,6 @@ class Node:
         # TODO printing out some graphics of the generated tree and maps
 
 # step 1: write averaging returns with random rollout policy
-
-# write some tests
-
-
-def selection():
-    pass
-
-def expansion():
-    pass
-
-def simulation_policy():
-    # can have a tree policy followed by a rollout policy
-    pass
-
-
-def evaluate_action():
-    # could be as simple as averaging returns
-    pass
-
 
 if __name__ == "__main__":
     mcts = MCTS(100)
