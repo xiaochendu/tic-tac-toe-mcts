@@ -180,7 +180,23 @@ class Node:
         else:
             # print("greedy policy")
             return self.greedy_policy(curr_player)
-
+        
+    def select_child_ucb(self, curr_player):
+        max_ucb_value = -5
+        best_child_index = None
+        # ensure there's at least 1 visit
+        total_visits = max(1, np.sum([child.visit_count if child.visit_count else 1e-5 for child in self.children]))
+        for index, child in enumerate(self.children):
+            num_visits = child.visit_count if child.visit_count else 1e-5
+            value = child.value if child.value else 0
+            ucb_value = value*curr_player + child.exploration_constant * np.sqrt(np.log(total_visits) / num_visits)
+            # import pdb; pdb.set_trace()
+            # print("ucb value", ucb_value)
+            if ucb_value > max_ucb_value:
+                max_ucb_value = ucb_value
+                best_child_index = index
+        
+        return self.children[best_child_index]
 
     def greedy_policy(self, curr_player):
         child_vals = [x.value*curr_player for x in self.children]
