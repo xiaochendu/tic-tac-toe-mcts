@@ -1,6 +1,8 @@
+import collections
 import matplotlib.pyplot as plt
 import numpy as np
 import random
+
 
 X = 1
 O = -1
@@ -10,22 +12,43 @@ BOARD_SIZE = 3
 
 class MCTS:
     def __init__(self, num_sim=10) -> None:
-        self.tic_tac_toe = self._set_tic_tac_toe()
+        self.nodes = collections.defaultdict(object)
         self.num_simulations = num_sim
+        self.tic_tac_toe = self._set_tic_tac_toe()
 
     def _set_tic_tac_toe(self):
         starting_state = np.zeros((BOARD_SIZE, BOARD_SIZE), dtype=int)
-        return Node(starting_state)
+        starting_node = Node(starting_state, mcts=self)
+        # add starting node to all nodes dict
+        node_hash = self.get_hash(starting_node)
+        self.nodes[node_hash] = starting_node
+
+        # print("hash of numpy array")
+        # print(self.get_hash(starting_node.state))
+
+        # print("hash of node")
+        # print(self.get_hash(starting_node))
+
+        print(self.nodes)
+        return starting_node
     
     def simulate(self, player):
         for i in range(self.num_simulations):
             # print(f"Simulating iter {i+1}")
             self.tic_tac_toe.simulate(player)
     
+    @classmethod
+    def get_hash(self, node):
+        if isinstance(node, Node):
+            data = node.state
+        elif isinstance(node, np.ndarray):
+            data = node
+        return "".join([str(x) for x in np.ravel(data)])
+        
     def run(self):
         player = X
         move_num = 1
-        max_moves = 11
+        max_moves = 10
 
         # fig = plt.figure()
         # ax = fig.add_subplot(1, max_moves, move_num)
@@ -47,24 +70,27 @@ class MCTS:
             player = Node.get_next_player(player)
             print("next player", player)
 
-
             move_num += 1
 
 class Node:
-    def __init__(self, state, parent=None, exploration_constant=5) -> None:
+    def __init__(self, state, parent=None, mcts=None, exploration_constant=5) -> None:
         self.state = state
-        self.parent = parent
+        self.parents = []
+        if parent:
+            self.add_parent(parent)
+        self.current_parent = None # parent that chose this (child) node during selection phase
         self.children = []
         self.value = None
         self.rewards = []
         self.visit_count = 0
         self.exploration_constant = exploration_constant
+        self.MCTS = mcts
 
     def to_string(self):
         string = ("Current state:\n"
         f"{self.state}\n"
         f"Visit count: {self.visit_count}\n"
-        f"Rewards: {self.rewards}\n"     
+        # f"Rewards: {self.rewards}\n"
         f"Value: {self.value}\n"
         )
         return string
@@ -75,16 +101,18 @@ class Node:
     def __repr__(self):
         return self.__str__()
 
+    def update_curr_parent(self, parent):
+        self.current_parent = parent
+
+    def add_parent(self, parent):
+        self.parents.append(parent)
+
     def add_children(self, child):
         self.children.append(child)
 
     def get_winner(self, curr_state=None) -> int:
         if not curr_state:
             curr_state = self.state
-
-         # if draw
-        if np.all(curr_state != 0):
-            return 0
 
         # TODO: use own method to get winner and run tests
 
@@ -111,6 +139,10 @@ class Node:
         if player_two_wins:
             return O
 
+         # if draw
+        if np.all(curr_state != 0):
+            return 0
+        
         return None
 
 
@@ -138,8 +170,12 @@ class Node:
             self.value = reward
         
         # print("state value", self.value)
-        if self.parent:
-            self.parent.backup(reward)
+        # if self.parents:
+        #     for parent in self.parents:
+        #         parent.backup(reward)
+        if self.current_parent:
+            self.current_parent.backup(reward)
+            self.current_parent = None
 
     @classmethod
     def get_next_player(cls, curr_player):
@@ -162,9 +198,11 @@ class Node:
         self.state = state_backup.copy()
         self.backup(reward)
 
+    def get_symmetric_states(self, state):
+        pass
+
     def expand(self, player):
         # expand all states
-        # TODO still doesn't solve the problem of same afterstate from different prev states
         possible_moves = self.get_possible_moves()
         # print("current node")
         # print(self)
@@ -174,8 +212,29 @@ class Node:
             new_state = self.state.copy()
             assert new_state[next_move] == 0, "next move is already taken"
             new_state[next_move] = player
-            new_child = Node(new_state, self)
-            assert new_child.parent is self, "Child's parent is not current Node!"
+
+            # find symmetrical states
+            symmetric_states = self.get_symmetric_states(new_state)
+
+            # solve afterstates
+            # check if node already contained in MCTS
+            mcts = self.MCTS
+            hash_code = mcts.get_hash(new_state)
+            # print("afterstate is", hash_code)
+
+
+
+            if hash_code in mcts.nodes:
+                # print("afterstate already created, getting existing node and adding to parents list")
+                new_child = mcts.nodes[hash_code]
+                new_child.add_parent(self)
+                # TODO append parent node
+            else:
+                # print("creating new afterstate and adding to mcts")
+                new_child = Node(new_state, parent=self, mcts=self.MCTS)
+                mcts.nodes[hash_code] = new_child
+            
+            assert self in new_child.parents, "Current node not in child's parents!"
 
             # print(new_child)
             assert np.abs(np.sum(new_child.state)) <= 1.0, "number of X and O differ by more than 1"
@@ -211,7 +270,9 @@ class Node:
                 max_ucb_value = ucb_value
                 best_child_index = index
         
-        return self.children[best_child_index]
+        selected_child = self.children[best_child_index]
+        selected_child.update_curr_parent(self)
+        return selected_child
 
     def greedy_policy(self, curr_player):
         child_vals = [x.value*curr_player if x.value else 0 for x in self.children]
