@@ -71,6 +71,8 @@ class MCTS:
             print("next player", player)
 
             move_num += 1
+        
+        print("total number of states", len(self.nodes))
 
 class Node:
     def __init__(self, state, parent=None, mcts=None, exploration_constant=5) -> None:
@@ -199,7 +201,12 @@ class Node:
         self.backup(reward)
 
     def get_symmetric_states(self, state):
-        pass
+        base_state = state.copy()
+        for i in range(4):
+            yield np.rot90(base_state, k=i)
+        flipped_state = np.flipud(base_state)
+        for i in range(4):
+            yield np.rot90(flipped_state, k=i)
 
     def expand(self, player):
         # expand all states
@@ -214,26 +221,30 @@ class Node:
             new_state[next_move] = player
 
             # find symmetrical states
-            symmetric_states = self.get_symmetric_states(new_state)
+            symmetric_states = [state for state in self.get_symmetric_states(new_state)]
+
+            assert len(symmetric_states) == 8, "There are fewer than 8 flipped states"
 
             # solve afterstates
             # check if node already contained in MCTS
             mcts = self.MCTS
-            hash_code = mcts.get_hash(new_state)
+            hash_codes = [mcts.get_hash(state) for state in symmetric_states]
             # print("afterstate is", hash_code)
 
-
-
-            if hash_code in mcts.nodes:
-                # print("afterstate already created, getting existing node and adding to parents list")
-                new_child = mcts.nodes[hash_code]
-                new_child.add_parent(self)
-                # TODO append parent node
-            else:
+            hash_code_found = False
+            for hash_code in hash_codes:
+                if hash_code in mcts.nodes:
+                    # print("afterstate already created, getting existing node and adding to parents list")
+                    new_child = mcts.nodes[hash_code]
+                    new_child.add_parent(self)
+            
+            if not hash_code_found:
                 # print("creating new afterstate and adding to mcts")
+                hash_code = mcts.get_hash(new_state)
                 new_child = Node(new_state, parent=self, mcts=self.MCTS)
                 mcts.nodes[hash_code] = new_child
-            
+                hash_code_found = True
+                
             assert self in new_child.parents, "Current node not in child's parents!"
 
             # print(new_child)
