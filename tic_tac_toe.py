@@ -237,13 +237,14 @@ class Node:
                     # print("afterstate already created, getting existing node and adding to parents list")
                     new_child = mcts.nodes[hash_code]
                     new_child.add_parent(self)
+                    hash_code_found = True
+                    break
             
             if not hash_code_found:
                 # print("creating new afterstate and adding to mcts")
                 hash_code = mcts.get_hash(new_state)
                 new_child = Node(new_state, parent=self, mcts=self.MCTS)
                 mcts.nodes[hash_code] = new_child
-                hash_code_found = True
                 
             assert self in new_child.parents, "Current node not in child's parents!"
 
